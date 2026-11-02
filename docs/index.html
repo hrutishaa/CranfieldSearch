@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CranfieldSearch: BM25 search over 1,400 aerodynamics abstracts</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 860px; margin: 32px auto; padding: 0 16px; color: #1d2330; }
+  h1 { font-size: 1.5rem; margin-bottom: 4px; }
+  p.sub { color: #5a6475; margin-top: 0; }
+  form { display: flex; gap: 8px; margin: 18px 0 8px; }
+  input[type=text] { flex: 1; font-size: 1rem; padding: 10px 12px; border: 1px solid #b9c2d0; border-radius: 6px; }
+  button { padding: 10px 16px; border: 0; background: #2457c5; color: #fff; border-radius: 6px; font-size: 1rem; cursor: pointer; }
+  .examples a { margin-right: 10px; font-size: .9rem; color: #2457c5; cursor: pointer; }
+  ol { padding-left: 22px; }
+  li { margin: 8px 0; }
+  .score { color: #7a8394; font-size: .85rem; }
+  .meta { color: #5a6475; font-size: .9rem; margin: 10px 0; }
+  table { border-collapse: collapse; margin: 8px 0 24px; font-size: .92rem; }
+  th, td { border-bottom: 1px solid #e3e7ee; padding: 6px 12px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  footer { margin-top: 40px; font-size: .85rem; color: #7a8394; }
+</style>
+</head>
+<body>
+<h1>CranfieldSearch</h1>
+<p class="sub">A search engine written from scratch in Java (inverted index, Porter stemmer, BM25), run here over the 1,400 Cranfield aerodynamics abstracts. The index is built by the Java code and exported to JSON; this page ranks with the same BM25 formula in your browser.</p>
+
+<form id="f">
+  <input id="q" type="text" list="words" autocomplete="off" placeholder='Try: heat transfer hypersonic, or a phrase in quotes like "boundary layer"'>
+  <datalist id="words"></datalist>
+  <button>Search</button>
+</form>
+<div class="examples">Examples:
+  <a>supersonic flow over a cone</a><a>"boundary layer" transition</a><a>flutter of panels</a><a>heat conduction in composite slabs</a>
+</div>
+<div class="meta" id="meta">Loading index...</div>
+<ol id="results"></ol>
+
+<h2 style="font-size:1.1rem">How well does it rank?</h2>
+<p class="meta">All 225 Cranfield test queries, scored against the human relevance judgments (numbers from <code>mvn exec:java -Dexec.args=eval</code>, read live from <a href="results.json">results.json</a>).</p>
+<table id="eval"><tr><th>Configuration</th><th>MAP</th><th>P@10</th><th>nDCG@10</th><th>Recall@100</th></tr></table>
+
+<footer>Code: <a href="https://github.com/hrutishaa/CranfieldSearch">github.com/hrutishaa/CranfieldSearch</a>. Data: Cranfield collection (Cleverdon, 1960s), via the University of Glasgow IR test collections page.</footer>
+
+<script>
+const K1 = 1.2, B = 0.75;
+let IX = null;
+
+function tokenize(s) { return (s.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []); }
+
+function search(raw) {
+  const phrases = [...raw.matchAll(/"([^"]+)"/g)].map(m => tokenize(m[1]));
+  const qtf = new Map();
+  for (const w of tokenize(raw.replace(/"/g, ' '))) {
+    const t = IX.stems[w];
+    if (t && IX.postings[t]) qtf.set(t, (qtf.get(t) || 0) + 1);
+  }
+  const acc = new Map();
+  for (const [t, c] of qtf) {
+    const p = IX.postings[t], df = p.length / 2;
+    const idf = Math.log(1 + (IX.n - df + 0.5) / (df + 0.5)) * c;
+    for (let i = 0; i < p.length; i += 2) {
+      const d = p[i], tf = p[i + 1], dl = IX.docs[d][1];
+      acc.set(d, (acc.get(d) || 0) + idf * tf * (K1 + 1) / (tf + K1 * (1 - B + B * dl / IX.avgdl)));
+    }
+  }
+  let hits = [...acc.entries()];
+  // The JSON index has no positions, so phrases are checked against the title + abstract text instead.
+  if (phrases.length) hits = hits.filter(([d]) => phrases.every(ph => IX.text[d].includes(' ' + ph.join(' ') + ' ')));
+  hits.sort((a, b) => b[1] - a[1] || IX.docs[a[0]][0] - IX.docs[b[0]][0]);
+  return { total: hits.length, top: hits.slice(0, 10) };
+}
+
+function run(q) {
+  if (!IX) return;
+  const t0 = performance.now();
+  const r = search(q);
+  const ms = (performance.now() - t0).toFixed(2);
+  document.getElementById('meta').textContent = q.trim() ? `${r.total} matching documents, top ${r.top.length} shown, ranked in ${ms} ms` : '';
+  const ol = document.getElementById('results');
+  ol.innerHTML = '';
+  for (const [d, s] of r.top) {
+    const li = document.createElement('li');
+    li.innerHTML = `<b>[${IX.docs[d][0]}]</b> ${IX.docs[d][2].replace(/</g, '&lt;')} <span class="score">score ${s.toFixed(3)}</span>`;
+    ol.appendChild(li);
+  }
+}
+
+document.getElementById('f').addEventListener('submit', e => { e.preventDefault(); run(document.getElementById('q').value); });
+document.querySelectorAll('.examples a').forEach(a => a.addEventListener('click', () => {
+  document.getElementById('q').value = a.textContent; run(a.textContent);
+}));
+
+fetch('web-index.json').then(r => r.json()).then(ix => {
+  IX = ix;
+  IX.text = IX.docs.map(d => ' ' + tokenize(d[3] || '').join(' ') + ' ');
+  const dl = document.getElementById('words');
+  for (const w of ix.suggest) { const o = document.createElement('option'); o.value = w; dl.appendChild(o); }
+  document.getElementById('meta').textContent = `Index loaded: ${ix.n} documents, ${Object.keys(ix.postings).length} terms.`;
+  const q = new URLSearchParams(location.search).get('q');
+  if (q) { document.getElementById('q').value = q; run(q); }
+});
+
+fetch('results.json').then(r => r.json()).then(res => {
+  const names = { 'tfidf': 'TF-IDF, no stemming', 'bm25': 'BM25, no stemming', 'bm25+porter': 'BM25 + Porter stemming' };
+  const tb = document.getElementById('eval');
+  for (const [k, v] of Object.entries(res.runs)) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${names[k] || k}</td><td>${v.map.toFixed(3)}</td><td>${v.p10.toFixed(3)}</td><td>${v.ndcg10.toFixed(3)}</td><td>${v.recall100.toFixed(3)}</td>`;
+    tb.appendChild(tr);
+  }
+});
+</script>
+</body>
+</html>
