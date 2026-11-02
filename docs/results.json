@@ -1,0 +1,9 @@
+{
+  "collection": {"docs": 1400, "queries": 225, "relevantJudgments": 1612},
+  "index": {"terms": 4698, "postings": 85647, "avgDocLength": 101.82, "indexedTextBytes": 1548451, "indexBytes": 510520},
+  "runs": {
+    "tfidf": {"scorer": "TF-IDF", "stemming": false, "map": 0.2952, "p10": 0.2289, "ndcg10": 0.3423, "recall100": 0.7216},
+    "bm25": {"scorer": "BM25(k1=1.2,b=0.75)", "stemming": false, "map": 0.2937, "p10": 0.2351, "ndcg10": 0.3520, "recall100": 0.7176},
+    "bm25+porter": {"scorer": "BM25(k1=1.2,b=0.75)", "stemming": true, "map": 0.3158, "p10": 0.2369, "ndcg10": 0.3596, "recall100": 0.7499}
+  }
+}

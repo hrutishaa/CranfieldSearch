@@ -1,0 +1,9 @@
+{
+  "cpus": 8,
+  "java": "17.0.21",
+  "buildMsMedian": 58.2,
+  "loadMsMedian": 8.4,
+  "indexBytes": 510520,
+  "queryLatencyMicros": {"samples": 9000, "p50": 28, "p95": 46, "p99": 93},
+  "queriesPerSecond": {"1": 33521, "2": 56420, "4": 124535, "8": 241892}
+}
