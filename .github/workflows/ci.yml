@@ -1,0 +1,20 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: "17", cache: maven}
+      - run: mvn -B package
+      - name: Evaluate on all 225 Cranfield queries
+        run: java -jar target/cranfield-search-1.0.jar eval
+      - name: Rebuild the web index
+        run: java -jar target/cranfield-search-1.0.jar export-web
+      - name: Committed results and demo index should match a fresh run
+        run: git diff --exit-code docs/results.json docs/web-index.json
+      - name: Smoke test the CLI
+        run: |
+          java -jar target/cranfield-search-1.0.jar search '"boundary layer" transition' 3
+          java -jar target/cranfield-search-1.0.jar suggest hyper 3
